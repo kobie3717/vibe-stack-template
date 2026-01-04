@@ -1,0 +1,34 @@
+{
+  "name": "PROJECT_NAME",
+  "version": "1.0.0",
+  "description": "PROJECT_DESCRIPTION",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend",
+    "shared"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w backend\" \"npm run dev -w frontend\"",
+    "build": "npm run build --workspaces",
+    "check:quick": "bash scripts/stack-check.sh --quick",
+    "check:fast": "bash scripts/stack-check.sh --fast",
+    "check:full": "bash scripts/stack-check.sh --full",
+    "check": "npm run check:fast",
+    "check:security": "bash scripts/security-check.sh",
+    "contract:check": "bash scripts/contract-check.sh",
+    "validate:env": "bash scripts/validate-env.sh",
+    "prerelease": "npm run check:full && npm run check:security && npm run contract:check"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "vibe-stack",
+    "template"
+  ],
+  "license": "MIT"
+}

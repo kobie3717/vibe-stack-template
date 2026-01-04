@@ -1,0 +1,99 @@
+# Gitleaks Configuration
+# https://github.com/gitleaks/gitleaks
+#
+# This configuration prevents secrets from being committed.
+# Run: gitleaks detect --source . --config .gitleaks.toml
+
+title = "Gitleaks Configuration for PROJECT_NAME"
+
+[extend]
+# Use default rules
+useDefault = true
+
+# Paths to ignore
+[allowlist]
+paths = [
+  # Dependencies
+  '''node_modules/''',
+  '''vendor/''',
+
+  # Build outputs
+  '''dist/''',
+  '''build/''',
+  '''.next/''',
+  '''out/''',
+
+  # Environment files (should also be in .gitignore)
+  '''\.env$''',
+  '''\.env\.local$''',
+  '''\.env\.\w+$''',
+
+  # Test fixtures and mocks
+  '''__tests__/''',
+  '''__mocks__/''',
+  '''tests/fixtures/''',
+  '''\.test\.(ts|js|tsx|jsx)$''',
+  '''\.spec\.(ts|js|tsx|jsx)$''',
+
+  # Lock files
+  '''package-lock\.json$''',
+  '''yarn\.lock$''',
+  '''pnpm-lock\.yaml$''',
+
+  # Documentation
+  '''\.md$''',
+
+  # CI/CD (contains intentional test values)
+  '''\.github/workflows/''',
+
+  # Generated files
+  '''\.prisma/''',
+  '''generated/''',
+
+  # IDE
+  '''\.vscode/''',
+  '''\.idea/''',
+]
+
+# Regex patterns to ignore (false positives)
+regexes = [
+  # Example tokens used in documentation
+  '''example[-_]token''',
+  '''test[-_]secret''',
+  '''placeholder''',
+  '''your[-_]secret[-_]here''',
+
+  # Base64 encoded test data
+  '''dGVzdC''',  # base64 of "test"
+
+  # Common test values
+  '''test_jwt_secret''',
+  '''test[-_]password''',
+  '''fake[-_]api[-_]key''',
+]
+
+# Additional rules can be added here
+# [[rules]]
+# id = "custom-rule-id"
+# description = "Description of what this catches"
+# regex = '''pattern'''
+# tags = ["key", "custom"]
+
+# Specific file ignores
+[[allowlist.commits]]
+# Ignore specific commits if needed (use sparingly)
+# sha = "abc123..."
+# description = "Reason for allowing this commit"
+
+# Stop words that indicate test/example content
+[[allowlist.stopwords]]
+stopwords = [
+  "example",
+  "test",
+  "fake",
+  "dummy",
+  "placeholder",
+  "sample",
+  "mock",
+  "fixture",
+]
