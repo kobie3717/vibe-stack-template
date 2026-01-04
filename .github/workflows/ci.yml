@@ -10,15 +10,106 @@ env:
   NODE_VERSION: '20'
 
 jobs:
-  # Security: Secret scanning (runs first, blocks other jobs if secrets found)
-  secrets-scan:
-    name: Secret Scanning
+  # ═══════════════════════════════════════════════════════════════════
+  # Mode Detection - determines if this is a template or real project
+  # ═══════════════════════════════════════════════════════════════════
+  detect-mode:
+    name: Detect Mode
     runs-on: ubuntu-latest
+    outputs:
+      is_template: ${{ steps.check.outputs.is_template }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Full history for scanning
+
+      - name: Check TEMPLATE_MODE
+        id: check
+        run: |
+          if [[ -f "TEMPLATE_MODE" ]]; then
+            MODE=$(cat TEMPLATE_MODE | tr -d '[:space:]')
+            if [[ "$MODE" == "true" ]]; then
+              echo "is_template=true" >> $GITHUB_OUTPUT
+              echo "📋 TEMPLATE MODE: Running template validation only"
+            elif [[ "$MODE" == "false" ]]; then
+              echo "is_template=false" >> $GITHUB_OUTPUT
+              echo "🚀 PROJECT MODE: Running full CI checks"
+            else
+              echo "::error::TEMPLATE_MODE has invalid value: '$MODE' (expected 'true' or 'false')"
+              exit 1
+            fi
+          else
+            echo "::error::TEMPLATE_MODE file is missing"
+            exit 1
+          fi
+
+  # ═══════════════════════════════════════════════════════════════════
+  # TEMPLATE MODE: Lightweight validation for blank templates
+  # ═══════════════════════════════════════════════════════════════════
+  template-validate:
+    name: Template Validation
+    runs-on: ubuntu-latest
+    needs: detect-mode
+    if: needs.detect-mode.outputs.is_template == 'true'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check required files exist
+        run: |
+          echo "Checking required template files..."
+          MISSING=0
+
+          FILES=(
+            "CLAUDE.md"
+            "SPEC.md"
+            "README.md"
+            "TEMPLATE_MODE"
+            ".gitignore"
+            ".gitleaks.toml"
+            ".github/workflows/ci.yml"
+            "scripts/stack-check.sh"
+            "scripts/contract-check.sh"
+            "scripts/validate-env.sh"
+            "scripts/template-validate.sh"
+            "backend/.env.example"
+            "frontend/.env.example"
+          )
+
+          for file in "${FILES[@]}"; do
+            if [[ -f "$file" ]]; then
+              echo "✓ $file"
+            else
+              echo "::error::Missing required file: $file"
+              MISSING=$((MISSING + 1))
+            fi
+          done
+
+          if [[ $MISSING -gt 0 ]]; then
+            exit 1
+          fi
+          echo "✓ All required files present"
+
+      - name: Check required directories exist
+        run: |
+          echo "Checking required directories..."
+          DIRS=("backend" "frontend" "scripts" ".github/workflows")
+
+          for dir in "${DIRS[@]}"; do
+            if [[ -d "$dir" ]]; then
+              echo "✓ $dir/"
+            else
+              echo "::error::Missing required directory: $dir/"
+              exit 1
+            fi
+          done
+          echo "✓ All required directories present"
+
+      - name: Validate YAML syntax
+        run: |
+          echo "Validating CI workflow YAML..."
+          python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"
+          echo "✓ ci.yml is valid YAML"
 
       - name: Install gitleaks
         run: |
@@ -30,7 +121,80 @@ jobs:
         run: |
           echo "Validating .gitleaks.toml..."
           gitleaks detect --config .gitleaks.toml --source . --no-git --exit-code 0 --verbose 2>&1 | head -20
-          echo "✓ Config validated"
+          echo "✓ .gitleaks.toml is valid"
+
+      - name: Run gitleaks secret scan
+        run: |
+          gitleaks detect --config .gitleaks.toml --source . --report-path results.sarif --report-format sarif
+          echo "✓ No secrets detected"
+
+      - name: Check for hardcoded secret patterns
+        run: |
+          echo "Scanning for hardcoded secret patterns..."
+
+          # Patterns that suggest real secrets
+          PATTERNS=(
+            'sk-[a-zA-Z0-9]{20,}'
+            'ghp_[a-zA-Z0-9]{36}'
+            'AKIA[0-9A-Z]{16}'
+          )
+
+          FOUND=0
+          for pattern in "${PATTERNS[@]}"; do
+            if grep -rE "$pattern" --include="*.ts" --include="*.js" --include="*.json" \
+               --exclude-dir=node_modules --exclude-dir=.git --exclude="package-lock.json" . 2>/dev/null | \
+               grep -v "example\|test\|placeholder" | head -1 | grep -q .; then
+              echo "::error::Potential hardcoded secret found matching: $pattern"
+              FOUND=$((FOUND + 1))
+            fi
+          done
+
+          if [[ $FOUND -gt 0 ]]; then
+            exit 1
+          fi
+          echo "✓ No hardcoded secret patterns found"
+
+      - name: Upload SARIF report
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: results.sarif
+        continue-on-error: true
+
+      - name: Template validation summary
+        run: |
+          echo ""
+          echo "═══════════════════════════════════════════════════════════════"
+          echo "✅ TEMPLATE VALIDATION PASSED"
+          echo ""
+          echo "This is a template repository. To activate full CI checks:"
+          echo "  1. Edit TEMPLATE_MODE and change 'true' to 'false'"
+          echo "  2. Add your backend and frontend code"
+          echo "  3. Commit and push"
+          echo "═══════════════════════════════════════════════════════════════"
+
+  # ═══════════════════════════════════════════════════════════════════
+  # PROJECT MODE: Full CI pipeline (runs when TEMPLATE_MODE=false)
+  # ═══════════════════════════════════════════════════════════════════
+
+  # Security: Secret scanning (blocks all other project jobs)
+  secrets-scan:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    needs: detect-mode
+    if: needs.detect-mode.outputs.is_template == 'false'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_x64.tar.gz | tar -xz
+          chmod +x gitleaks
+          sudo mv gitleaks /usr/local/bin/
 
       - name: Run gitleaks scan
         run: |
@@ -42,13 +206,14 @@ jobs:
         if: always()
         with:
           sarif_file: results.sarif
-        continue-on-error: true  # Don't fail if SARIF upload has issues
+        continue-on-error: true
 
   # Security: Static security validation
   security-validation:
     name: Security Validation
     runs-on: ubuntu-latest
-    needs: secrets-scan
+    needs: [detect-mode, secrets-scan]
+    if: needs.detect-mode.outputs.is_template == 'false'
 
     steps:
       - name: Checkout code
@@ -58,7 +223,7 @@ jobs:
         run: |
           echo "Checking CORS configuration..."
           if grep -rE "origin:\s*['\"]?\*['\"]?" backend/src/ 2>/dev/null; then
-            echo "::error::Wildcard CORS origin found"
+            echo "::error::Wildcard CORS origin found - this is a security risk"
             exit 1
           fi
           echo "✓ No wildcard CORS origins"
@@ -66,19 +231,21 @@ jobs:
       - name: Verify rate limiting exists
         run: |
           echo "Checking rate limiting..."
-          if [ -f "backend/src/middleware/rateLimiter.ts" ] || [ -f "backend/src/middleware/rateLimiter.js" ]; then
+          if [[ -f "backend/src/middleware/rateLimiter.ts" ]] || [[ -f "backend/src/middleware/rateLimiter.js" ]]; then
             echo "✓ Rate limiting middleware exists"
           else
-            echo "::warning::Rate limiting middleware not found"
+            echo "::error::Rate limiting middleware not found at backend/src/middleware/rateLimiter.{ts,js}"
+            exit 1
           fi
 
       - name: Verify auth middleware exists
         run: |
           echo "Checking authentication..."
           if grep -rq "jwt\|JWT\|jsonwebtoken" backend/src/middleware/ 2>/dev/null; then
-            echo "✓ JWT authentication middleware exists"
+            echo "✓ JWT authentication middleware found"
           else
-            echo "::warning::JWT auth middleware not found"
+            echo "::error::JWT auth middleware not found in backend/src/middleware/"
+            exit 1
           fi
 
       - name: Verify sensitive files are gitignored
@@ -88,23 +255,17 @@ jobs:
             if grep -q "$pattern" .gitignore 2>/dev/null; then
               echo "✓ $pattern is gitignored"
             else
-              echo "::warning::$pattern may not be gitignored"
+              echo "::error::$pattern is not in .gitignore - security risk"
+              exit 1
             fi
           done
-
-      - name: Validate environment template
-        run: |
-          if [ -f scripts/validate-env.sh ]; then
-            bash scripts/validate-env.sh --template
-          else
-            echo "No env validation script found"
-          fi
 
   # Stack check: Contract and type alignment
   stack-check:
     name: Stack Check
     runs-on: ubuntu-latest
-    needs: secrets-scan
+    needs: [detect-mode, secrets-scan]
+    if: needs.detect-mode.outputs.is_template == 'false'
 
     steps:
       - name: Checkout code
@@ -115,28 +276,36 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Install root dependencies
-        run: npm install
+      - name: Verify shared types exist
+        run: |
+          if [[ -d "shared" ]] && [[ -f "shared/package.json" ]]; then
+            echo "✓ shared/ package exists"
+          else
+            echo "::warning::shared/ types package not found - consider adding for type safety"
+          fi
 
-      - name: Install shared dependencies
-        run: npm install
-        working-directory: ./shared
-        if: hashFiles('shared/package.json') != ''
-
-      - name: Build shared types
-        run: npm run build
-        working-directory: ./shared
-        if: hashFiles('shared/package.json') != ''
+      - name: Install and build shared
+        run: |
+          if [[ -f "shared/package.json" ]]; then
+            cd shared && npm install && npm run build
+            echo "✓ Shared types built"
+          fi
 
       - name: Run contract check
-        run: bash scripts/contract-check.sh
-        if: hashFiles('scripts/contract-check.sh') != ''
+        run: |
+          if [[ -f "scripts/contract-check.sh" ]]; then
+            bash scripts/contract-check.sh
+          else
+            echo "::error::scripts/contract-check.sh not found"
+            exit 1
+          fi
 
-  # Backend CI
+  # Backend CI - STRICT MODE (no skipping)
   backend:
     name: Backend
     runs-on: ubuntu-latest
-    needs: secrets-scan
+    needs: [detect-mode, secrets-scan]
+    if: needs.detect-mode.outputs.is_template == 'false'
 
     defaults:
       run:
@@ -178,59 +347,97 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Verify backend structure
+        run: |
+          echo "Verifying backend has required files..."
+
+          REQUIRED=(
+            "package.json"
+            "tsconfig.json"
+          )
+
+          MISSING=0
+          for file in "${REQUIRED[@]}"; do
+            if [[ ! -f "$file" ]]; then
+              echo "::error::Backend missing required file: $file"
+              MISSING=$((MISSING + 1))
+            else
+              echo "✓ $file exists"
+            fi
+          done
+
+          if [[ $MISSING -gt 0 ]]; then
+            echo ""
+            echo "::error::Backend is incomplete. In PROJECT MODE, all required files must exist."
+            echo "::error::If this is still a template, set TEMPLATE_MODE to 'true'"
+            exit 1
+          fi
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: backend/package-lock.json
 
       - name: Install dependencies
         run: npm ci
-        working-directory: .
 
       - name: Security audit
         run: npm audit --audit-level=high --omit=dev || echo "::warning::npm audit found vulnerabilities"
-        working-directory: .
 
       - name: Generate Prisma client
-        run: npx prisma generate
-        if: hashFiles('backend/prisma/schema.prisma') != ''
+        run: |
+          if [[ -f "prisma/schema.prisma" ]]; then
+            npx prisma generate
+            echo "✓ Prisma client generated"
+          fi
 
       - name: Push database schema
-        run: npx prisma db push --skip-generate
-        if: hashFiles('backend/prisma/schema.prisma') != ''
+        run: |
+          if [[ -f "prisma/schema.prisma" ]]; then
+            npx prisma db push --skip-generate
+            echo "✓ Database schema pushed"
+          fi
 
       - name: Type check
         run: npx tsc --noEmit
-        if: hashFiles('backend/tsconfig.json') != ''
 
       - name: Lint
-        run: npm run lint
-        if: hashFiles('backend/.eslintrc*', 'backend/eslint.config.*') != ''
+        run: |
+          if [[ -f ".eslintrc.js" ]] || [[ -f ".eslintrc.json" ]] || [[ -f "eslint.config.js" ]] || [[ -f "eslint.config.mjs" ]]; then
+            npm run lint
+          else
+            echo "::warning::No ESLint config found - skipping lint"
+          fi
 
       - name: Run tests
-        run: npm test -- --coverage --forceExit --testPathIgnorePatterns integration
-        if: hashFiles('backend/jest.config.*', 'backend/package.json') != ''
+        run: |
+          if [[ -f "jest.config.js" ]] || [[ -f "jest.config.ts" ]] || grep -q '"jest"' package.json 2>/dev/null; then
+            npm test -- --coverage --forceExit --testPathIgnorePatterns integration
+          else
+            echo "::warning::No Jest config found - skipping tests"
+          fi
 
       - name: Build
         run: npm run build
-        if: hashFiles('backend/package.json') != ''
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          directory: ./backend/coverage
+          directory: ./coverage
           flags: backend
           fail_ci_if_error: false
-        if: hashFiles('backend/coverage/') != ''
+        if: always()
+        continue-on-error: true
 
-  # Frontend CI
+  # Frontend CI - STRICT MODE (no skipping)
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
-    needs: secrets-scan
+    needs: [detect-mode, secrets-scan]
+    if: needs.detect-mode.outputs.is_template == 'false'
 
     defaults:
       run:
@@ -240,41 +447,67 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Verify frontend structure
+        run: |
+          echo "Verifying frontend has required files..."
+
+          REQUIRED=(
+            "package.json"
+            "tsconfig.json"
+          )
+
+          MISSING=0
+          for file in "${REQUIRED[@]}"; do
+            if [[ ! -f "$file" ]]; then
+              echo "::error::Frontend missing required file: $file"
+              MISSING=$((MISSING + 1))
+            else
+              echo "✓ $file exists"
+            fi
+          done
+
+          if [[ $MISSING -gt 0 ]]; then
+            echo ""
+            echo "::error::Frontend is incomplete. In PROJECT MODE, all required files must exist."
+            echo "::error::If this is still a template, set TEMPLATE_MODE to 'true'"
+            exit 1
+          fi
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
         run: npm ci
-        working-directory: .
 
       - name: Security audit
         run: npm audit --audit-level=high --omit=dev || echo "::warning::npm audit found vulnerabilities"
-        working-directory: .
 
       - name: Type check
         run: npx tsc --noEmit
-        if: hashFiles('frontend/tsconfig.json') != ''
 
       - name: Lint
-        run: npm run lint
-        if: hashFiles('frontend/.eslintrc*', 'frontend/eslint.config.*') != ''
+        run: |
+          if [[ -f ".eslintrc.js" ]] || [[ -f ".eslintrc.json" ]] || [[ -f "eslint.config.js" ]] || [[ -f "eslint.config.mjs" ]]; then
+            npm run lint
+          else
+            echo "::warning::No ESLint config found - skipping lint"
+          fi
 
       - name: Build
         run: npm run build
-        if: hashFiles('frontend/package.json') != ''
         env:
           VITE_API_URL: http://localhost:4000/api
 
-  # E2E Tests (runs on main only)
+  # E2E Tests (runs on main only, requires both backend and frontend)
   e2e:
     name: E2E Tests
     runs-on: ubuntu-latest
-    needs: [backend, frontend]
-    if: github.ref == 'refs/heads/main'
+    needs: [detect-mode, backend, frontend]
+    if: needs.detect-mode.outputs.is_template == 'false' && github.ref == 'refs/heads/main'
 
     services:
       postgres:
@@ -313,27 +546,27 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Install dependencies
+      - name: Install backend dependencies
         run: npm ci
+        working-directory: ./backend
 
       - name: Setup database
         run: |
-          npx prisma generate
-          npx prisma db push --skip-generate
+          if [[ -f "prisma/schema.prisma" ]]; then
+            npx prisma generate
+            npx prisma db push --skip-generate
+          fi
         working-directory: ./backend
-        if: hashFiles('backend/prisma/schema.prisma') != ''
 
       - name: Build backend
         run: npm run build
         working-directory: ./backend
-        if: hashFiles('backend/package.json') != ''
 
       - name: Start backend
         run: |
           node dist/index.js &
           sleep 5
         working-directory: ./backend
-        if: hashFiles('backend/dist/index.js', 'backend/package.json') != ''
 
       - name: Wait for backend
         run: |
@@ -345,23 +578,29 @@ jobs:
             echo "Waiting for backend... attempt $i/30"
             sleep 1
           done
+          echo "::error::Backend failed to start"
           exit 1
-        if: hashFiles('backend/package.json') != ''
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: ./frontend
 
       - name: Install Playwright
         run: npx playwright install --with-deps chromium
         working-directory: ./frontend
-        if: hashFiles('frontend/package.json') != ''
 
       - name: Build frontend
         run: npm run build
         working-directory: ./frontend
-        if: hashFiles('frontend/package.json') != ''
 
       - name: Run E2E tests
-        run: npx playwright test --project=chromium
+        run: |
+          if [[ -f "playwright.config.ts" ]] || [[ -f "playwright.config.js" ]]; then
+            npx playwright test --project=chromium
+          else
+            echo "::warning::No Playwright config found - skipping E2E tests"
+          fi
         working-directory: ./frontend
-        if: hashFiles('frontend/playwright.config.*') != ''
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v4

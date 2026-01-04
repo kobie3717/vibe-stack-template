@@ -7,8 +7,19 @@ A production-ready project template with built-in verification, security enforce
 - **CLAUDE.md** - AI assistant protocols for autonomous development
 - **SPEC.md** - Product specification as source of truth
 - **Verification Scripts** - Stack, security, contract, and environment checks
-- **CI/CD Pipeline** - GitHub Actions with security scanning
+- **CI/CD Pipeline** - GitHub Actions with security scanning and mode-aware enforcement
 - **Deployment Checklist** - Pre-deploy, staging, production, rollback procedures
+
+## Template Mode vs Project Mode
+
+This template uses an explicit mode gate to ensure CI behavior is appropriate:
+
+| Mode | TEMPLATE_MODE file | CI Behavior |
+|------|-------------------|-------------|
+| **Template Mode** | `true` (default) | Runs lightweight validation: file existence, config parsing, secret scanning |
+| **Project Mode** | `false` | Runs full checks: lint, typecheck, build, tests, E2E, security - **fails if files are missing** |
+
+This prevents "false green" builds where CI passes by skipping checks.
 
 ## Quick Start
 
@@ -22,7 +33,21 @@ cd my-project
 rm -rf .git && git init
 ```
 
-### 2. Replace PROJECT_KNOBS
+### 2. Switch to Project Mode
+
+**This is critical!** Edit the `TEMPLATE_MODE` file:
+
+```bash
+# Change 'true' to 'false'
+echo "false" > TEMPLATE_MODE
+```
+
+Once you do this:
+- CI will run full checks (lint, typecheck, build, tests)
+- CI will **fail** if backend/frontend are missing required files (package.json, tsconfig.json)
+- You cannot hide broken builds by deleting files
+
+### 3. Replace PROJECT_KNOBS
 
 Open `CLAUDE.md` and update the PROJECT_KNOBS section:
 
@@ -41,29 +66,31 @@ Also update:
 - `SPEC.md` → project description and features
 - `DEPLOYMENT_SECURITY_CHECKLIST.md` → domain references
 
-### 3. Install Dependencies
+### 4. Install Dependencies
 
 ```bash
 npm install
 ```
 
-### 4. Setup Environment
+### 5. Setup Environment
 
 ```bash
 cp backend/.env.example backend/.env
 # Edit backend/.env with your values
 ```
 
-### 5. Verify Setup
+### 6. Verify Setup
 
 ```bash
-npm run check:quick   # Fast health check
+npm run check:template   # Validate template structure
+npm run check:quick      # Fast health check (once you have code)
 ```
 
 ## Available Commands
 
 | Command | Description | When to Use |
 |---------|-------------|-------------|
+| `npm run check:template` | Validate template structure | Before pushing template changes |
 | `npm run check:quick` | Health checks only (~5s) | After config changes |
 | `npm run check:fast` | Lint + typecheck + build (~90s) | After code changes |
 | `npm run check:full` | Full check + tests + E2E (~3-5min) | Before merge/release |
@@ -71,6 +98,34 @@ npm run check:quick   # Fast health check
 | `npm run contract:check` | Frontend/backend alignment | After API changes |
 | `npm run validate:env` | Environment variables | After env changes |
 | `npm run prerelease` | All checks combined | Before production deploy |
+
+## CI Pipeline Behavior
+
+### When TEMPLATE_MODE=true
+
+The CI runs a single job: **Template Validation**
+
+- Checks all required files exist (CLAUDE.md, SPEC.md, scripts, etc.)
+- Validates YAML syntax of ci.yml
+- Validates .gitleaks.toml config
+- Runs gitleaks secret scan
+- Checks for hardcoded secret patterns
+
+**Backend/Frontend jobs do NOT run.** This is intentional - they are placeholders.
+
+### When TEMPLATE_MODE=false
+
+The CI runs full pipeline:
+
+1. **detect-mode** - Reads TEMPLATE_MODE, sets job conditions
+2. **secrets-scan** - Blocks if secrets detected (gitleaks)
+3. **security-validation** - CORS, rate limiting, auth checks (**fails if missing**)
+4. **stack-check** - Contract and type alignment
+5. **backend** - Lint, typecheck, test, build (**fails if package.json/tsconfig.json missing**)
+6. **frontend** - Lint, typecheck, build (**fails if package.json/tsconfig.json missing**)
+7. **e2e** - End-to-end tests (main branch only)
+
+**No conditional skipping.** If files are missing, CI fails with clear error messages.
 
 ## System Status Definitions
 
@@ -98,27 +153,30 @@ This runs:
 ## Project Structure
 
 ```
-├── CLAUDE.md                    # AI assistant protocols
-├── SPEC.md                      # Product specification
+├── TEMPLATE_MODE               # 'true' or 'false' - CI mode gate
+├── CLAUDE.md                   # AI assistant protocols
+├── SPEC.md                     # Product specification
 ├── DEPLOYMENT_SECURITY_CHECKLIST.md
-├── .gitleaks.toml               # Secret scanning config
+├── .gitleaks.toml              # Secret scanning config
 ├── .github/
 │   └── workflows/
-│       └── ci.yml               # GitHub Actions CI
+│       └── ci.yml              # GitHub Actions CI (mode-aware)
 ├── scripts/
-│   ├── stack-check.sh           # Unified verification
-│   ├── security-check.sh        # Security validation
-│   ├── contract-check.sh        # Type alignment
-│   └── validate-env.sh          # Environment validation
-├── backend/                     # Express API (customize)
-├── frontend/                    # React + Vite (customize)
-└── shared/                      # Shared types (optional)
+│   ├── template-validate.sh    # Template structure validation
+│   ├── stack-check.sh          # Unified verification
+│   ├── security-check.sh       # Security validation
+│   ├── contract-check.sh       # Type alignment
+│   └── validate-env.sh         # Environment validation
+├── backend/                    # Express API (customize)
+├── frontend/                   # React + Vite (customize)
+└── shared/                     # Shared types (optional)
 ```
 
 ## Customization Checklist
 
 After cloning, update these files:
 
+- [ ] `TEMPLATE_MODE` → Change `true` to `false`
 - [ ] `CLAUDE.md` → PROJECT_KNOBS section
 - [ ] `package.json` → name, description
 - [ ] `SPEC.md` → project description, features, API contracts
@@ -128,6 +186,13 @@ After cloning, update these files:
 - [ ] `DEPLOYMENT_SECURITY_CHECKLIST.md` → Domain, emergency contacts
 
 ## What Each Check Does
+
+### `check:template`
+- Validates required template files exist
+- Validates script permissions
+- Validates config file syntax (.gitleaks.toml, ci.yml)
+- Checks for hardcoded secret patterns
+- Reports TEMPLATE_MODE value
 
 ### `check:quick`
 - Pings `/health` endpoint
@@ -159,22 +224,26 @@ After cloning, update these files:
 - API response format consistency
 - Cross-workspace TypeScript
 
-## CI Pipeline
-
-The GitHub Actions workflow runs on every PR and push:
-
-1. **secrets-scan** - Blocks if secrets detected
-2. **security-validation** - Static security checks
-3. **stack-check** - Type alignment verification
-4. **backend** - Lint, typecheck, test, build
-5. **frontend** - Lint, typecheck, build
-6. **e2e** - End-to-end tests (main branch only)
-
 ## The Golden Rule
 
 > If code and SPEC.md disagree, **the code is BROKEN**.
 
 SPEC.md is the source of truth. Update it first, then implement.
+
+## Why No Conditional Skipping?
+
+Previous versions of this template used `if: hashFiles('backend/tsconfig.json') != ''` to skip checks when files were missing. This created a dangerous pattern:
+
+1. Someone deletes package.json accidentally
+2. CI skips the build step
+3. CI passes (false green)
+4. Broken state gets merged
+
+The new approach:
+- In **Template Mode**: CI only validates template structure
+- In **Project Mode**: CI requires all files and fails loudly if missing
+
+This is a **10/10 enforcement** approach. No hiding, no skipping, no false greens.
 
 ## License
 

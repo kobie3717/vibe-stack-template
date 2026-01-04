@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "concurrently \"npm run dev -w backend\" \"npm run dev -w frontend\"",
     "build": "npm run build --workspaces",
+    "check:template": "bash scripts/template-validate.sh",
     "check:quick": "bash scripts/stack-check.sh --quick",
     "check:fast": "bash scripts/stack-check.sh --fast",
     "check:full": "bash scripts/stack-check.sh --full",
