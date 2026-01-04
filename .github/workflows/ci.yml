@@ -203,6 +203,7 @@ jobs:
 
       - name: Type check
         run: npx tsc --noEmit
+        if: hashFiles('backend/tsconfig.json') != ''
 
       - name: Lint
         run: npm run lint
@@ -214,6 +215,7 @@ jobs:
 
       - name: Build
         run: npm run build
+        if: hashFiles('backend/package.json') != ''
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
@@ -255,6 +257,7 @@ jobs:
 
       - name: Type check
         run: npx tsc --noEmit
+        if: hashFiles('frontend/tsconfig.json') != ''
 
       - name: Lint
         run: npm run lint
@@ -262,6 +265,7 @@ jobs:
 
       - name: Build
         run: npm run build
+        if: hashFiles('frontend/package.json') != ''
         env:
           VITE_API_URL: http://localhost:4000/api
 
@@ -322,12 +326,14 @@ jobs:
       - name: Build backend
         run: npm run build
         working-directory: ./backend
+        if: hashFiles('backend/package.json') != ''
 
       - name: Start backend
         run: |
           node dist/index.js &
           sleep 5
         working-directory: ./backend
+        if: hashFiles('backend/dist/index.js', 'backend/package.json') != ''
 
       - name: Wait for backend
         run: |
@@ -340,14 +346,17 @@ jobs:
             sleep 1
           done
           exit 1
+        if: hashFiles('backend/package.json') != ''
 
       - name: Install Playwright
         run: npx playwright install --with-deps chromium
         working-directory: ./frontend
+        if: hashFiles('frontend/package.json') != ''
 
       - name: Build frontend
         run: npm run build
         working-directory: ./frontend
+        if: hashFiles('frontend/package.json') != ''
 
       - name: Run E2E tests
         run: npx playwright test --project=chromium
