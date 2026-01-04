@@ -1,4 +1,4 @@
-# Gitleaks Configuration
+# Gitleaks Configuration (v8.x compatible)
 # https://github.com/gitleaks/gitleaks
 #
 # This configuration prevents secrets from being committed.
@@ -10,8 +10,9 @@ title = "Gitleaks Configuration for PROJECT_NAME"
 # Use default rules
 useDefault = true
 
-# Paths to ignore
+# Allowlist configuration
 [allowlist]
+# Paths to ignore (regex patterns)
 paths = [
   # Dependencies
   '''node_modules/''',
@@ -64,7 +65,7 @@ regexes = [
   '''your[-_]secret[-_]here''',
 
   # Base64 encoded test data
-  '''dGVzdC''',  # base64 of "test"
+  '''dGVzdC''',
 
   # Common test values
   '''test_jwt_secret''',
@@ -72,21 +73,7 @@ regexes = [
   '''fake[-_]api[-_]key''',
 ]
 
-# Additional rules can be added here
-# [[rules]]
-# id = "custom-rule-id"
-# description = "Description of what this catches"
-# regex = '''pattern'''
-# tags = ["key", "custom"]
-
-# Specific file ignores
-[[allowlist.commits]]
-# Ignore specific commits if needed (use sparingly)
-# sha = "abc123..."
-# description = "Reason for allowing this commit"
-
-# Stop words that indicate test/example content
-[[allowlist.stopwords]]
+# Stop words - strings that indicate test/example content (plain string array)
 stopwords = [
   "example",
   "test",
@@ -97,3 +84,9 @@ stopwords = [
   "mock",
   "fixture",
 ]
+
+# Commits to ignore (plain string array of commit SHAs)
+# Uncomment and add specific commits if needed:
+# commits = [
+#   "abc123def456...",
+# ]

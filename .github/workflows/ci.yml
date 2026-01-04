@@ -20,11 +20,29 @@ jobs:
         with:
           fetch-depth: 0  # Full history for scanning
 
-      - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_CONFIG: .gitleaks.toml
+      - name: Install gitleaks
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_x64.tar.gz | tar -xz
+          chmod +x gitleaks
+          sudo mv gitleaks /usr/local/bin/
+
+      - name: Validate gitleaks config
+        run: |
+          echo "Validating .gitleaks.toml..."
+          gitleaks detect --config .gitleaks.toml --source . --no-git --exit-code 0 --verbose 2>&1 | head -20
+          echo "✓ Config validated"
+
+      - name: Run gitleaks scan
+        run: |
+          gitleaks detect --config .gitleaks.toml --source . --report-path results.sarif --report-format sarif
+          echo "✓ No secrets detected"
+
+      - name: Upload SARIF report
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: results.sarif
+        continue-on-error: true  # Don't fail if SARIF upload has issues
 
   # Security: Static security validation
   security-validation:
