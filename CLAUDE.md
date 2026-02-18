@@ -85,6 +85,24 @@ When testing failure scenarios:
 - **DO simulate failures by**: stopping external dependencies, setting env vars, using test endpoints
 - After simulating failure, **always restore** the system
 
+### P9: Plan Before Every Change
+Even small changes get a written plan. Before touching code, state: "What am I changing and why?" This applies to one-line fixes too. Plans prevent drift and make reviews possible. Write it down — even if it's two sentences.
+
+### P10: Test Immediately
+Run relevant tests after every change, not "later." If no tests exist for the area you're changing, write them first (TDD). A change without a test run is an unverified change, and unverified changes are broken until proven otherwise.
+
+### P11: Proactive Scanning
+After completing work, scan for collateral damage before declaring victory:
+- Unused imports
+- Type errors in adjacent files
+- Regressions in related features
+- Console warnings or errors
+
+Don't wait for CI to tell you what you should have caught locally.
+
+### P12: Memory Discipline
+After discovering gotchas, workarounds, or lessons learned: **document them immediately.** Mental notes don't survive sessions. If you learned something the hard way, write it down so the next session (or the next developer) doesn't repeat the mistake.
+
 ---
 
 ## Structured Handover (after every task)
@@ -145,7 +163,7 @@ SMALLEST NEXT FIX:
 
 ## What NOT to Duplicate Here
 
-The following are defined in SPEC.md - do not restate:
+The following are defined in SPEC.md — do not restate:
 - State machines
 - API response envelope and error codes
 - Invariants
