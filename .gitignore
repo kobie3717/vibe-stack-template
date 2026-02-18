@@ -80,3 +80,10 @@ docs/api/
 
 # Sentry
 .sentryclirc
+
+# Build outputs
+dist/
+*.d.ts.map
+
+# Dependencies (workspace level)
+node_modules/
