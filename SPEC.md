@@ -12,6 +12,8 @@ If code and SPEC.md disagree, **the code is BROKEN**.
 
 This document is the source of truth for product behavior.
 
+> **📝 This is a blank canvas.** All sections below are intentionally left as placeholders for you to fill in with your project's specifics. The structure shows you what to document — replace the TODOs with your actual specs.
+
 ---
 
 ## 1. Project Overview
