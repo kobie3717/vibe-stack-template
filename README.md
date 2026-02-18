@@ -106,6 +106,8 @@ npm run check:template   # Validate template structure
 npm run check:quick      # Fast health check (once you have code)
 ```
 
+> **💡 Note:** This template provides the structure, scripts, and CI pipeline — not application code. The `backend/` and `frontend/` directories are starting points for you to build on.
+
 ---
 
 ## Verification Commands
@@ -198,6 +200,16 @@ Previous versions used `if: hashFiles('backend/tsconfig.json') != ''` to skip ch
 The fix: **Template Mode** validates structure only. **Project Mode** requires all files and fails loudly. No hiding, no skipping, no false greens.
 
 ---
+
+---
+
+<div align="center">
+
+**If this template saved you from a broken deploy, consider giving it a ⭐**
+
+[Star this repo](https://github.com/kobie3717/vibe-stack-template)
+
+</div>
 
 ## License
 
